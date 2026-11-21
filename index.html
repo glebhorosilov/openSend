@@ -52,7 +52,8 @@
             return btoa(unescape(encodeURIComponent(str)));
         }
         function fromBase64(str) {
-            return decodeURIComponent(escape(atob(str)));
+            const clean = str.replace(/\s/g, '');
+            return clean ? decodeURIComponent(escape(atob(clean))) : '[]';
         }
 
         async function publishPost() {
@@ -73,8 +74,19 @@
                 const getRes = await fetch(apiUrl, {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
+                
+                if (!getRes.ok) {
+                    status.innerText = `Ошибка доступа к posts.json (код ${getRes.status}). Проверь токен или имя репозитория.`;
+                    return;
+                }
+
                 const fileData = await getRes.json();
-                const currentPosts = JSON.parse(fromBase64(fileData.content));
+                let currentPosts = [];
+                try {
+                    currentPosts = JSON.parse(fromBase64(fileData.content));
+                } catch (e) {
+                    currentPosts = [];
+                }
 
                 currentPosts.unshift({
                     author: repo.split('/')[0],
@@ -97,13 +109,21 @@
 
                 if (putRes.ok) {
                     document.getElementById('postText').value = '';
-                    status.innerText = 'Опубликовано! (В ленте обновится через 10–30 сек)';
-                    setTimeout(loadFeed, 3000);
+                    status.innerText = 'Готово! Пост опубликован в GitHub.';
+                    const feedDiv = document.getElementById('feed');
+                    if (feedDiv.innerText.includes('Постов пока нет')) feedDiv.innerHTML = '';
+                    feedDiv.innerHTML = `
+                        <div class="card">
+                            <div class="meta">@${repo.split('/')[0]} • только что</div>
+                            <div>${text.replace(/</g, '&lt;')}</div>
+                        </div>
+                    ` + feedDiv.innerHTML;
                 } else {
-                    status.innerText = 'Ошибка публикации. Проверь права токена (Contents: Read & Write).';
+                    const err = await putRes.json();
+                    status.innerText = `Ошибка записи (${putRes.status}): ${err.message}`;
                 }
             } catch (e) {
-                status.innerText = 'Ошибка сети или неверный формат posts.json';
+                status.innerText = 'Ошибка: ' + e.message;
             }
         }
 
@@ -117,7 +137,7 @@
                     const res = await fetch(`https://githubusercontent.com{sub}/main/posts.json?t=${Date.now()}`);
                     if (res.ok) {
                         const posts = await res.json();
-                        allPosts = allPosts.concat(posts);
+                        if (Array.isArray(posts)) allPosts = allPosts.concat(posts);
                     }
                 } catch (e) { console.log('Ошибка чтения:', sub); }
             }
