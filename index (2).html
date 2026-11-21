@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenSaidy — Децентрализованная сеть</title>
+    <style>
+        body { font-family: system-ui, sans-serif; max-width: 650px; margin: 40px auto; padding: 0 20px; background: #0d1117; color: #c9d1d9; }
+        .card { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 16px; margin-bottom: 16px; }
+        input, textarea { width: 100%; box-sizing: border-box; background: #0d1117; border: 1px solid #30363d; color: #fff; padding: 10px; border-radius: 6px; margin-top: 8px; }
+        button { background: #238636; color: #fff; border: none; padding: 10px 18px; border-radius: 6px; cursor: pointer; font-weight: bold; margin-top: 10px; }
+        button:hover { background: #2ea043; }
+        .meta { font-size: 12px; color: #8b949e; margin-bottom: 8px; }
+        h1 { color: #58a6ff; }
+    </style>
+</head>
+<body>
+
+    <h1>OpenSaidy</h1>
+
+    <div class="card">
+        <strong>1. Настройки твоего узла (хранятся только в твоем браузере)</strong>
+        <input id="repo" placeholder="Твой репозиторий (например: glebhorosilov/openSend)">
+        <input id="token" type="password" placeholder="Твой токен (github_pat_...)">
+        <input id="subs" placeholder="Подписки через запятую (например: glebhorosilov/openSend)">
+        <button onclick="saveSettings()">Сохранить и обновить ленту</button>
+    </div>
+
+    <div class="card">
+        <strong>2. Новый пост</strong>
+        <textarea id="postText" rows="3" placeholder="Что нового?"></textarea>
+        <button onclick="publishPost()">Опубликовать в GitHub</button>
+        <div id="status" class="meta" style="margin-top:8px;"></div>
+    </div>
+
+    <h3>Лента постов</h3>
+    <div id="feed">Загрузка...</div>
+
+    <script>
+        document.getElementById('repo').value = localStorage.getItem('os_repo') || 'glebhorosilov/openSend';
+        document.getElementById('token').value = localStorage.getItem('os_token') || '';
+        document.getElementById('subs').value = localStorage.getItem('os_subs') || 'glebhorosilov/openSend';
+
+        function saveSettings() {
+            localStorage.setItem('os_repo', document.getElementById('repo').value.trim());
+            localStorage.setItem('os_token', document.getElementById('token').value.trim());
+            localStorage.setItem('os_subs', document.getElementById('subs').value.trim());
+            loadFeed();
+        }
+
+        function toBase64(str) {
+            return btoa(unescape(encodeURIComponent(str)));
+        }
+        function fromBase64(str) {
+            return decodeURIComponent(escape(atob(str)));
+        }
+
+        async function publishPost() {
+            const repo = localStorage.getItem('os_repo');
+            const token = localStorage.getItem('os_token');
+            const text = document.getElementById('postText').value.trim();
+            const status = document.getElementById('status');
+
+            if (!repo || !token || !text) {
+                status.innerText = 'Заполни репозиторий, токен и текст поста!';
+                return;
+            }
+
+            status.innerText = 'Отправка в GitHub...';
+            const apiUrl = `https://github.com{repo}/contents/posts.json`;
+
+            try {
+                const getRes = await fetch(apiUrl, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                const fileData = await getRes.json();
+                const currentPosts = JSON.parse(fromBase64(fileData.content));
+
+                currentPosts.unshift({
+                    author: repo.split('/')[0],
+                    text: text,
+                    timestamp: Date.now()
+                });
+
+                const putRes = await fetch(apiUrl, {
+                    method: 'PUT',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        message: 'New post via OpenSaidy',
+                        content: toBase64(JSON.stringify(currentPosts, null, 2)),
+                        sha: fileData.sha
+                    })
+                });
+
+                if (putRes.ok) {
+                    document.getElementById('postText').value = '';
+                    status.innerText = 'Опубликовано! (В ленте обновится через 10–30 сек)';
+                    setTimeout(loadFeed, 3000);
+                } else {
+                    status.innerText = 'Ошибка публикации. Проверь права токена (Contents: Read & Write).';
+                }
+            } catch (e) {
+                status.innerText = 'Ошибка сети или неверный формат posts.json';
+            }
+        }
+
+        async function loadFeed() {
+            const subs = (localStorage.getItem('os_subs') || '').split(',').map(s => s.trim()).filter(Boolean);
+            const feedDiv = document.getElementById('feed');
+            let allPosts = [];
+
+            for (const sub of subs) {
+                try {
+                    const res = await fetch(`https://githubusercontent.com{sub}/main/posts.json?t=${Date.now()}`);
+                    if (res.ok) {
+                        const posts = await res.json();
+                        allPosts = allPosts.concat(posts);
+                    }
+                } catch (e) { console.log('Ошибка чтения:', sub); }
+            }
+
+            allPosts.sort((a, b) => b.timestamp - a.timestamp);
+
+            if (allPosts.length === 0) {
+                feedDiv.innerHTML = '<div class="meta">Постов пока нет. Напиши первый!</div>';
+                return;
+            }
+
+            feedDiv.innerHTML = allPosts.map(p => `
+                <div class="card">
+                    <div class="meta">@${p.author} • ${new Date(p.timestamp).toLocaleString()}</div>
+                    <div>${p.text.replace(/</g, '&lt;')}</div>
+                </div>
+            `).join('');
+        }
+
+        loadFeed();
+    </script>
+</body>
+</html>
