@@ -51,6 +51,7 @@
         function toBase64(str) {
             return btoa(unescape(encodeURIComponent(str)));
         }
+
         function fromBase64(str) {
             const clean = str.replace(/\s/g, '');
             return clean ? decodeURIComponent(escape(atob(clean))) : '[]';
@@ -72,7 +73,10 @@
 
             try {
                 const getRes = await fetch(apiUrl, {
-                    headers: { 'Authorization': `Bearer ${token}` }
+                    headers: { 
+                        'Authorization': `Bearer ${token}`,
+                        'Accept': 'application/vnd.github+json'
+                    }
                 });
                 
                 if (!getRes.ok) {
@@ -84,12 +88,15 @@
                 let currentPosts = [];
                 try {
                     currentPosts = JSON.parse(fromBase64(fileData.content));
+                    if (!Array.isArray(currentPosts)) currentPosts = [];
                 } catch (e) {
                     currentPosts = [];
                 }
 
+                const authorName = repo.split('/')[0];
+
                 currentPosts.unshift({
-                    author: repo.split('/')[0],
+                    author: authorName,
                     text: text,
                     timestamp: Date.now()
                 });
@@ -98,6 +105,7 @@
                     method: 'PUT',
                     headers: {
                         'Authorization': `Bearer ${token}`,
+                        'Accept': 'application/vnd.github+json',
                         'Content-Type': 'application/json'
                     },
                     body: JSON.stringify({
@@ -114,7 +122,7 @@
                     if (feedDiv.innerText.includes('Постов пока нет')) feedDiv.innerHTML = '';
                     feedDiv.innerHTML = `
                         <div class="card">
-                            <div class="meta">@${repo.split('/')[0]} • только что</div>
+                            <div class="meta">@${authorName} • только что</div>
                             <div>${text.replace(/</g, '&lt;')}</div>
                         </div>
                     ` + feedDiv.innerHTML;
@@ -139,7 +147,9 @@
                         const posts = await res.json();
                         if (Array.isArray(posts)) allPosts = allPosts.concat(posts);
                     }
-                } catch (e) { console.log('Ошибка чтения:', sub); }
+                } catch (e) { 
+                    console.log('Ошибка чтения:', sub); 
+                }
             }
 
             allPosts.sort((a, b) => b.timestamp - a.timestamp);
