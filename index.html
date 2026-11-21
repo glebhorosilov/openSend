@@ -41,10 +41,18 @@
         document.getElementById('token').value = localStorage.getItem('os_token') || '';
         document.getElementById('subs').value = localStorage.getItem('os_subs') || 'glebhorosilov/openSend';
 
+        function syncInputsToStorage() {
+            const repo = document.getElementById('repo').value.trim();
+            const token = document.getElementById('token').value.trim();
+            const subs = document.getElementById('subs').value.trim();
+            localStorage.setItem('os_repo', repo);
+            localStorage.setItem('os_token', token);
+            localStorage.setItem('os_subs', subs);
+            return { repo, token, subs };
+        }
+
         function saveSettings() {
-            localStorage.setItem('os_repo', document.getElementById('repo').value.trim());
-            localStorage.setItem('os_token', document.getElementById('token').value.trim());
-            localStorage.setItem('os_subs', document.getElementById('subs').value.trim());
+            syncInputsToStorage();
             loadFeed();
         }
 
@@ -58,8 +66,7 @@
         }
 
         async function publishPost() {
-            const repo = localStorage.getItem('os_repo');
-            const token = localStorage.getItem('os_token');
+            const { repo, token } = syncInputsToStorage();
             const text = document.getElementById('postText').value.trim();
             const status = document.getElementById('status');
 
@@ -69,18 +76,18 @@
             }
 
             status.innerText = 'Отправка в GitHub...';
-            const apiUrl = `https://github.com{repo}/contents/posts.json`;
+            const apiUrl = 'https://github.com' + repo + '/contents/posts.json';
 
             try {
                 const getRes = await fetch(apiUrl, {
                     headers: { 
-                        'Authorization': `Bearer ${token}`,
+                        'Authorization': 'Bearer ' + token,
                         'Accept': 'application/vnd.github+json'
                     }
                 });
                 
                 if (!getRes.ok) {
-                    status.innerText = `Ошибка доступа к posts.json (код ${getRes.status}). Проверь токен или имя репозитория.`;
+                    status.innerText = 'Ошибка доступа к posts.json (код ' + getRes.status + '). Проверь токен или имя репозитория.';
                     return;
                 }
 
@@ -93,7 +100,7 @@
                     currentPosts = [];
                 }
 
-                const authorName = repo.split('/')[0];
+                const authorName = repo.split('/');
 
                 currentPosts.unshift({
                     author: authorName,
@@ -104,7 +111,7 @@
                 const putRes = await fetch(apiUrl, {
                     method: 'PUT',
                     headers: {
-                        'Authorization': `Bearer ${token}`,
+                        'Authorization': 'Bearer ' + token,
                         'Accept': 'application/vnd.github+json',
                         'Content-Type': 'application/json'
                     },
@@ -120,15 +127,10 @@
                     status.innerText = 'Готово! Пост опубликован в GitHub.';
                     const feedDiv = document.getElementById('feed');
                     if (feedDiv.innerText.includes('Постов пока нет')) feedDiv.innerHTML = '';
-                    feedDiv.innerHTML = `
-                        <div class="card">
-                            <div class="meta">@${authorName} • только что</div>
-                            <div>${text.replace(/</g, '&lt;')}</div>
-                        </div>
-                    ` + feedDiv.innerHTML;
+                    feedDiv.innerHTML = '<div class="card"><div class="meta">@' + authorName + ' • только что</div><div>' + text.replace(/</g, '&lt;') + '</div></div>' + feedDiv.innerHTML;
                 } else {
                     const err = await putRes.json();
-                    status.innerText = `Ошибка записи (${putRes.status}): ${err.message}`;
+                    status.innerText = 'Ошибка записи (' + putRes.status + '): ' + err.message;
                 }
             } catch (e) {
                 status.innerText = 'Ошибка: ' + e.message;
@@ -142,7 +144,8 @@
 
             for (const sub of subs) {
                 try {
-                    const res = await fetch(`https://githubusercontent.com{sub}/main/posts.json?t=${Date.now()}`);
+                    const url = 'https://githubusercontent.com' + sub + '/main/posts.json?t=' + Date.now();
+                    const res = await fetch(url);
                     if (res.ok) {
                         const posts = await res.json();
                         if (Array.isArray(posts)) allPosts = allPosts.concat(posts);
@@ -159,12 +162,12 @@
                 return;
             }
 
-            feedDiv.innerHTML = allPosts.map(p => `
-                <div class="card">
-                    <div class="meta">@${p.author} • ${new Date(p.timestamp).toLocaleString()}</div>
-                    <div>${p.text.replace(/</g, '&lt;')}</div>
-                </div>
-            `).join('');
+            feedDiv.innerHTML = allPosts.map(p => 
+                '<div class="card">' +
+                    '<div class="meta">@' + p.author + ' • ' + new Date(p.timestamp).toLocaleString() + '</div>' +
+                    '<div>' + p.text.replace(/</g, '&lt;') + '</div>' +
+                '</div>'
+            ).join('');
         }
 
         loadFeed();
